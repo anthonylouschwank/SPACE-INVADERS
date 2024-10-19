@@ -31,6 +31,7 @@ bool game_over = false;
 // Mutex y semáforos
 pthread_mutex_t lock;
 sem_t sem_bullets;
+pthread_mutex_t lock_player, lock_bullet;
 
 // Inicializa los alienígenas
 void init_aliens() {
@@ -60,12 +61,11 @@ void draw_game() {
     refresh();
 }
 
-// Movimiento del jugador
 void *move_player(void *arg) {
     int ch;
     while (!game_over) {
         ch = getch();
-        pthread_mutex_lock(&lock);
+        pthread_mutex_lock(&lock_player);  // Usa el mutex solo para el jugador
         if (ch == KEY_LEFT && player_x > MIN_X) {
             player_x--;
         } else if (ch == KEY_RIGHT && player_x < MAX_X) {
@@ -73,7 +73,7 @@ void *move_player(void *arg) {
         } else if (ch == ' ') {
             sem_post(&sem_bullets);  // Dispara al presionar espacio
         }
-        pthread_mutex_unlock(&lock);
+        pthread_mutex_unlock(&lock_player);
         usleep(DELAY);
     }
     return NULL;
@@ -120,18 +120,24 @@ void *player_shoot(void *arg) {
         sem_wait(&sem_bullets);
         int bullet_x = player_x;
         int bullet_y = player_y - 1;
+
         while (bullet_y > 0 && !game_over) {
-            pthread_mutex_lock(&lock);
+            pthread_mutex_lock(&lock_bullet);  // Protege la posición del disparo
             mvprintw(bullet_y, bullet_x, "*");
             refresh();
+            pthread_mutex_unlock(&lock_bullet);
+
             usleep(BULLET_DELAY);
+
+            pthread_mutex_lock(&lock_bullet);  // Borra el disparo
             mvprintw(bullet_y, bullet_x, " ");
             bullet_y--;
-            pthread_mutex_unlock(&lock);
+            pthread_mutex_unlock(&lock_bullet);
         }
     }
     return NULL;
 }
+
 
 // Verifica colisiones
 void check_collisions() {
@@ -148,6 +154,8 @@ int main() {
     nodelay(stdscr, TRUE); // No bloquea el getch
     init_aliens();         // Inicializa los alienígenas
     pthread_mutex_init(&lock, NULL);
+    pthread_mutex_init(&lock_player, NULL);
+    pthread_mutex_init(&lock_bullet, NULL);
     sem_init(&sem_bullets, 0, 0);
 
     // Hilos
@@ -165,6 +173,11 @@ int main() {
     // Finaliza el juego
     endwin();
     pthread_mutex_destroy(&lock);
+    pthread_mutex_destroy(&lock_player);
+    pthread_mutex_destroy(&lock_bullet);
     sem_destroy(&sem_bullets);
     return 0;
 }
+
+
+
