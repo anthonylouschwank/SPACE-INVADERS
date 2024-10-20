@@ -69,8 +69,10 @@ void init_bullets() {
 //Dibuja pantalla del juego
 void draw_game() {
     clear();
-    mvprintw(player_y, player_x, "^");  // nave
-    for (int i = 0; i < ALIEN_ROWS; ++i) {  // aliens
+    mvprintw(player_y, player_x, "^");
+
+    // Dibuja los alienígenas
+    for (int i = 0; i < ALIEN_ROWS; ++i) {
         for (int j = 0; j < ALIEN_COLS; ++j) {
             if (aliens[i][j] != ' ') {
                 int screen_col = alien_start_col + j * 2;
@@ -79,23 +81,27 @@ void draw_game() {
             }
         }
     }
-    //bunkeres
+
+    //bunkers
+    int bunker_start_x = (MAX_X - (3 * 5 + 2 * 10)) / 2;  //simetria
     for (int i = 0; i < 3; ++i) {
-        mvprintw(MAX_Y - 5, i * 25 + 10, "%s", bunkers[i]);
+        mvprintw(MAX_Y - 5, bunker_start_x + i * (5 + 10), "%s", bunkers[i]);
     }
 
-    //balas jugador
+    //balas del jugador
     for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
         if (player_bullets[i].active) {
             mvaddch(player_bullets[i].y, player_bullets[i].x, '|');
         }
     }
-    //balas aliens
+
+    //balas de los aliens
     for (int i = 0; i < MAX_ALIEN_BULLETS; i++) {
         if (alien_bullets[i].active) {
             mvaddch(alien_bullets[i].y, alien_bullets[i].x, '*');
         }
     }
+    
     mvprintw(0, 0, "Score: %d", score);  // Puntaje
     mvprintw(0, 20, "Lives: %d", lives); // Vidas
     refresh();
@@ -110,7 +116,7 @@ void *move_player(void *arg) {
             player_x--;
         } else if (ch == KEY_RIGHT && player_x < MAX_X - 1) {
             player_x++;
-        } else if (ch == ' ') {
+        } else if (ch == ' ') { 
             sem_post(&sem_bullets);
         }
         pthread_mutex_unlock(&lock_player);
@@ -141,7 +147,7 @@ void *move_aliens(void *arg) {
         }
 
         //chance de disparo
-        if (rand() % 100 < 10) {  //10%
+        if (rand() % 100 < 15) {  //15%
             sem_post(&sem_bullets);
         }
     }
@@ -154,13 +160,11 @@ void *player_shoot(void *arg) {
     const int shot_cooldown = 500000; //cooldown
 
     while (!game_over) {
+
         sem_wait(&sem_bullets);
-        
         int current_time = clock() * (1000000 / CLOCKS_PER_SEC);
-        
-        //checkeo del tiempo
+
         if (current_time - last_shot_time >= shot_cooldown) {
-            // Sección crítica: manejo de balas
             pthread_mutex_lock(&lock_bullet);
             for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
                 if (!player_bullets[i].active) {
