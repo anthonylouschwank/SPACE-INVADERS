@@ -69,10 +69,8 @@ void init_bullets() {
 //Dibuja pantalla del juego
 void draw_game() {
     clear();
-    mvprintw(player_y, player_x, "^");
-
-    // Dibuja los alienígenas
-    for (int i = 0; i < ALIEN_ROWS; ++i) {
+    mvprintw(player_y, player_x, "^");  // nave
+    for (int i = 0; i < ALIEN_ROWS; ++i) {  // aliens
         for (int j = 0; j < ALIEN_COLS; ++j) {
             if (aliens[i][j] != ' ') {
                 int screen_col = alien_start_col + j * 2;
@@ -81,27 +79,23 @@ void draw_game() {
             }
         }
     }
-
-    //bunkers
-    int bunker_start_x = (MAX_X - (3 * 5 + 2 * 10)) / 2;  //simetria
+    //bunkeres
     for (int i = 0; i < 3; ++i) {
-        mvprintw(MAX_Y - 5, bunker_start_x + i * (5 + 10), "%s", bunkers[i]);
+        mvprintw(MAX_Y - 5, i * 25 + 10, "%s", bunkers[i]);
     }
 
-    //balas del jugador
+    //balas jugador
     for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
         if (player_bullets[i].active) {
             mvaddch(player_bullets[i].y, player_bullets[i].x, '|');
         }
     }
-
-    //balas de los aliens
+    //balas aliens
     for (int i = 0; i < MAX_ALIEN_BULLETS; i++) {
         if (alien_bullets[i].active) {
             mvaddch(alien_bullets[i].y, alien_bullets[i].x, '*');
         }
     }
-    
     mvprintw(0, 0, "Score: %d", score);  // Puntaje
     mvprintw(0, 20, "Lives: %d", lives); // Vidas
     refresh();
@@ -116,7 +110,7 @@ void *move_player(void *arg) {
             player_x--;
         } else if (ch == KEY_RIGHT && player_x < MAX_X - 1) {
             player_x++;
-        } else if (ch == ' ') { 
+        } else if (ch == ' ') {
             sem_post(&sem_bullets);
         }
         pthread_mutex_unlock(&lock_player);
@@ -147,7 +141,7 @@ void *move_aliens(void *arg) {
         }
 
         //chance de disparo
-        if (rand() % 100 < 15) {  //15%
+        if (rand() % 100 < 10) {  //10%
             sem_post(&sem_bullets);
         }
     }
@@ -156,14 +150,17 @@ void *move_aliens(void *arg) {
 
 //disparo del jugador
 void *player_shoot(void *arg) {
-    clock_t last_shot_time = 0;
+    int last_shot_time = 0;
     const int shot_cooldown = 500000; //cooldown
 
     while (!game_over) {
         sem_wait(&sem_bullets);
-        clock_t current_time = clock();
-
-        if ((current_time - last_shot_time) * 1000000 / CLOCKS_PER_SEC >= shot_cooldown) {
+        
+        int current_time = clock() * (1000000 / CLOCKS_PER_SEC);
+        
+        //checkeo del tiempo
+        if (current_time - last_shot_time >= shot_cooldown) {
+            // Sección crítica: manejo de balas
             pthread_mutex_lock(&lock_bullet);
             for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
                 if (!player_bullets[i].active) {
@@ -212,6 +209,7 @@ void *alien_shoot(void *arg) {
 
 //actualizar posiciones de balas y detectar colisiones
 void update_bullets() {
+
     pthread_mutex_lock(&lock_bullet);
 
     for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
@@ -237,7 +235,7 @@ void update_bullets() {
                 }
             }
 
-            //colision bunker
+            //colision bunkeres
             for (int b = 0; b < 3; b++) {
                 if (player_bullets[i].y == MAX_Y - 5 &&
                     player_bullets[i].x >= b * 25 + 10 && 
@@ -255,7 +253,7 @@ void update_bullets() {
         continue;
     }
 
-    //balas alien
+    //balas de los aliens
     for (int i = 0; i < MAX_ALIEN_BULLETS; i++) {
         if (alien_bullets[i].active) {
             alien_bullets[i].y++;
@@ -274,7 +272,7 @@ void update_bullets() {
                 continue;
             }
 
-            //colision bunkeres
+            //colision búnkeres
             for (int b = 0; b < 3; b++) {
                 if (alien_bullets[i].y == MAX_Y - 5 &&
                     alien_bullets[i].x >= b * 20 + 10 &&
@@ -362,6 +360,3 @@ int main() {
     sem_destroy(&sem_bullets);
     return 0;
 }
-
-
-
