@@ -156,15 +156,14 @@ void *move_aliens(void *arg) {
 
 //disparo del jugador
 void *player_shoot(void *arg) {
-    int last_shot_time = 0;
+    clock_t last_shot_time = 0;
     const int shot_cooldown = 500000; //cooldown
 
     while (!game_over) {
-
         sem_wait(&sem_bullets);
-        int current_time = clock() * (1000000 / CLOCKS_PER_SEC);
+        clock_t current_time = clock();
 
-        if (current_time - last_shot_time >= shot_cooldown) {
+        if ((current_time - last_shot_time) * 1000000 / CLOCKS_PER_SEC >= shot_cooldown) {
             pthread_mutex_lock(&lock_bullet);
             for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
                 if (!player_bullets[i].active) {
@@ -213,7 +212,6 @@ void *alien_shoot(void *arg) {
 
 //actualizar posiciones de balas y detectar colisiones
 void update_bullets() {
-
     pthread_mutex_lock(&lock_bullet);
 
     for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
@@ -239,7 +237,7 @@ void update_bullets() {
                 }
             }
 
-            //colision bunkeres
+            //colision bunker
             for (int b = 0; b < 3; b++) {
                 if (player_bullets[i].y == MAX_Y - 5 &&
                     player_bullets[i].x >= b * 25 + 10 && 
@@ -257,7 +255,7 @@ void update_bullets() {
         continue;
     }
 
-    //balas de los aliens
+    //balas alien
     for (int i = 0; i < MAX_ALIEN_BULLETS; i++) {
         if (alien_bullets[i].active) {
             alien_bullets[i].y++;
@@ -276,7 +274,7 @@ void update_bullets() {
                 continue;
             }
 
-            //colision búnkeres
+            //colision bunkeres
             for (int b = 0; b < 3; b++) {
                 if (alien_bullets[i].y == MAX_Y - 5 &&
                     alien_bullets[i].x >= b * 20 + 10 &&
