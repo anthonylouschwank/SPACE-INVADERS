@@ -6,7 +6,7 @@
 #include <ncurses.h>
 #include <stdbool.h>
 
-//cons del juego
+//Constantes del juego
 #define MAX_X 80
 #define MIN_X 0
 #define MAX_Y 24
@@ -19,22 +19,32 @@
 #define MAX_PLAYER_BULLETS 3
 #define MAX_ALIEN_BULLETS 5
 
-//vars del juego
+//Informacion del jugador y las balas
 int player_x = MAX_X / 2;
 int player_y = MAX_Y - 2;
 int score = 0;
 int lives = 3;
+
+//Poscionamiento de arays
 int invader_speed = ALIEN_DELAY;
 char aliens[ALIEN_ROWS][ALIEN_COLS];
 char bunkers[3][5] = {{'-', '-', '-', '-', '-'},
                       {'-', '-', '-', '-', '-'},
                       {'-', '-', '-', '-', '-'}};
 bool game_over = false;
+
+
+//Informacion de movimiento y posicion alienigenas
 int alien_start_col = 0;
-int alien_direction = 1;  //1=derecha, -1=izquierda
+int alien_direction = 1;  
 int alien_row_offset = 0;
 
-//Estructura bala
+//Variables de pausa y menu
+bool in_menu = true;
+bool paused = false;
+int menu_selection = 0;
+
+//Estructura de bala
 typedef struct {
     int x, y;
     bool active;
@@ -43,6 +53,7 @@ typedef struct {
 Bullet player_bullets[MAX_PLAYER_BULLETS];
 Bullet alien_bullets[MAX_ALIEN_BULLETS];
 
+//Declaracion de semaforos y mutex
 pthread_mutex_t lock;
 sem_t sem_bullets;
 pthread_mutex_t lock_player, lock_bullet;
@@ -69,8 +80,8 @@ void init_bullets() {
 //Dibuja pantalla del juego
 void draw_game() {
     clear();
-    mvprintw(player_y, player_x, "^");  // nave
-    for (int i = 0; i < ALIEN_ROWS; ++i) {  // aliens
+    mvprintw(player_y, player_x, "^");  //Se dibuja la nave del jugador
+    for (int i = 0; i < ALIEN_ROWS; ++i) {  // Se dibuja las naves de los alienigenas
         for (int j = 0; j < ALIEN_COLS; ++j) {
             if (aliens[i][j] != ' ') {
                 int screen_col = alien_start_col + j * 2;
@@ -79,18 +90,18 @@ void draw_game() {
             }
         }
     }
-    //bunkeres
+    //Dibujo de los bunkeres
     for (int i = 0; i < 3; ++i) {
         mvprintw(MAX_Y - 5, i * 25 + 10, "%s", bunkers[i]);
     }
 
-    //balas jugador
+    //Dibuja las balas del jugador una vez activadas
     for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
         if (player_bullets[i].active) {
             mvaddch(player_bullets[i].y, player_bullets[i].x, '|');
         }
     }
-    //balas aliens
+    //Sibuja las balas de los alienigenas una vez activadas
     for (int i = 0; i < MAX_ALIEN_BULLETS; i++) {
         if (alien_bullets[i].active) {
             mvaddch(alien_bullets[i].y, alien_bullets[i].x, '*');
@@ -101,6 +112,7 @@ void draw_game() {
     refresh();
 }
 
+//Movimiento del jugador definido por ncurses
 void *move_player(void *arg) {
     int ch;
     while (!game_over) {
@@ -119,14 +131,14 @@ void *move_player(void *arg) {
     return NULL;
 }
 
-//movimiento de los aliens
+//Movimiento de los alienigenas
 void *move_aliens(void *arg) {
     while (!game_over) {
         pthread_mutex_lock(&lock);
         
         alien_start_col += alien_direction;
         
-        if (alien_start_col <= 0 || alien_start_col + ALIEN_COLS * 2 >= MAX_X) {
+        if (alien_start_col <= 0 || alien_start_col + ALIEN_COLS * 2 >= MAX_X) { //Revisa cada sierto tiempo en que lugar estan para verificar direccion
             alien_direction *= -1;
             alien_row_offset++; 
             alien_start_col += alien_direction;
@@ -135,32 +147,32 @@ void *move_aliens(void *arg) {
         pthread_mutex_unlock(&lock);
         usleep(invader_speed);
 
-        //aumento de velocidad
+        //Aumento de la velocidad segun el tiempo de juego
         if (invader_speed > ALIEN_DELAY / 2) {
             invader_speed -= 1000;
         }
 
-        //chance de disparo
-        if (rand() % 100 < 10) {  //10%
+        //Probabilidades de disparo del alienigena
+        if (rand() % 100 < 10) {  //10% de probabilidad
             sem_post(&sem_bullets);
         }
     }
     return NULL;
 }
 
-//disparo del jugador
+//Disparo del jugador
 void *player_shoot(void *arg) {
     int last_shot_time = 0;
-    const int shot_cooldown = 500000; //cooldown
+    const int shot_cooldown = 500000; //Tiempo de espera entre cada disparo
 
     while (!game_over) {
         sem_wait(&sem_bullets);
         
         int current_time = clock() * (1000000 / CLOCKS_PER_SEC);
         
-        //checkeo del tiempo
+        //Se revisa cuanto tiempo a pasado desde la ultima vez que se disparo
         if (current_time - last_shot_time >= shot_cooldown) {
-            // Sección crítica: manejo de balas
+            //Una vez sea cierto, se encierra la zona critica
             pthread_mutex_lock(&lock_bullet);
             for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
                 if (!player_bullets[i].active) {
@@ -181,7 +193,7 @@ void *player_shoot(void *arg) {
 void *alien_shoot(void *arg) {
     while (!game_over) {
         usleep(INVADER_SHOOT_DELAY);
-        if (rand() % 100 < 10) {  //10%
+        if (rand() % 100 < 10) {  //10% de probabilidad de disparo
             pthread_mutex_lock(&lock);
             for (int j = 0; j < ALIEN_COLS; j++) {
                 for (int i = ALIEN_ROWS - 1; i >= 0; i--) {
@@ -207,11 +219,11 @@ void *alien_shoot(void *arg) {
     return NULL;
 }
 
-//actualizar posiciones de balas y detectar colisiones
+//Actualiza las posiciones de las balas y su interaccion con el medio
 void update_bullets() {
-
     pthread_mutex_lock(&lock_bullet);
 
+    //Recorremos todas las balas del jugador
     for (int i = 0; i < MAX_PLAYER_BULLETS; i++) {
         if (player_bullets[i].active) {
             player_bullets[i].y--;
@@ -220,7 +232,7 @@ void update_bullets() {
                 continue;
             }
 
-            //colision alien
+            //Colision de la bala del jugador con un alienigena
             for (int row = 0; row < ALIEN_ROWS; row++) {
                 for (int col = 0; col < ALIEN_COLS; col++) {
                     if (aliens[row][col] != ' ' &&
@@ -235,7 +247,7 @@ void update_bullets() {
                 }
             }
 
-            //colision bunkeres
+            //Colision de la bala del jugador con un bunker
             for (int b = 0; b < 3; b++) {
                 if (player_bullets[i].y == MAX_Y - 5 &&
                     player_bullets[i].x >= b * 25 + 10 && 
@@ -253,7 +265,7 @@ void update_bullets() {
         continue;
     }
 
-    //balas de los aliens
+    //Recorremos todas las balas alienigenas
     for (int i = 0; i < MAX_ALIEN_BULLETS; i++) {
         if (alien_bullets[i].active) {
             alien_bullets[i].y++;
@@ -262,7 +274,7 @@ void update_bullets() {
                 continue;
             }
 
-            //colision jugador
+            //Colision de una bala alienigena con un jugador
             if (alien_bullets[i].y == player_y && alien_bullets[i].x == player_x) {
                 lives--;
                 alien_bullets[i].active = false;
@@ -272,7 +284,7 @@ void update_bullets() {
                 continue;
             }
 
-            //colision búnkeres
+            //Colision de una bala alienigena con un bunker
             for (int b = 0; b < 3; b++) {
                 if (alien_bullets[i].y == MAX_Y - 5 &&
                     alien_bullets[i].x >= b * 20 + 10 &&
@@ -291,15 +303,16 @@ void update_bullets() {
     pthread_mutex_unlock(&lock_bullet);
 }
 
-
-//game over
+//Se revisa si el juego cumple requisitos para acabar
 bool check_game_over() {
     pthread_mutex_lock(&lock);
     bool aliens_alive = false;
+    //Se revisa si hay caracteres distintos a vacio dentro del array
     for (int i = 0; i < ALIEN_ROWS; ++i) {
         for (int j = 0; j < ALIEN_COLS; ++j) {
             if (aliens[i][j] != ' ') {
                 aliens_alive = true;
+                //Se revisa que no hayan llegado a la posicion justo arriba del jugador
                 if (i + alien_row_offset >= MAX_Y - 6) {
                     game_over = true;
                     pthread_mutex_unlock(&lock);
@@ -308,6 +321,8 @@ bool check_game_over() {
             }
         }
     }
+
+    //Se finaliza el juego si la conficion se cumple
     if (!aliens_alive) {
         game_over = true;
         pthread_mutex_unlock(&lock);
@@ -317,46 +332,118 @@ bool check_game_over() {
     return game_over;
 }
 
+//Se dibuja el menu con su sistema de interaccion
+void draw_menu() {
+    clear();
+    mvprintw(MAX_Y/2 - 2, MAX_X/2 - 10, "SPACE INVADERS");
+    mvprintw(MAX_Y/2, MAX_X/2 - 5, menu_selection == 0 ? "> Start" : "  Start");
+    mvprintw(MAX_Y/2 + 1, MAX_X/2 - 5, menu_selection == 1 ? "> Exit" : "  Exit");
+    refresh();
+}
+
+//Sistema de interaccion del menu
+void handle_menu() {
+    int ch;
+    while (in_menu) {
+        draw_menu();
+        ch = getch();
+        switch (ch) {
+            case KEY_UP:
+                menu_selection = (menu_selection - 1 + 2) % 2;
+                break;
+            case KEY_DOWN:
+                menu_selection = (menu_selection + 1) % 2;
+                break;
+            case 10:  //Llegan entradas sobre la seleccion del menu
+                if (menu_selection == 0) {
+                    in_menu = false;  //Comienzan el juego
+                } else {
+                    endwin();
+                    exit(0);  //Se sale de la aplicacion
+                }
+                break;
+        }
+    }
+}
+
 // Main del juego
 int main() {
+    //Se inicializan librerias y sistemas de interaccion con el usuario
     srand(time(NULL));
     initscr();
     noecho();
     curs_set(FALSE);
     keypad(stdscr, TRUE);
-    nodelay(stdscr, TRUE);
-    init_aliens();
-    init_bullets();
-    pthread_mutex_init(&lock, NULL);
-    pthread_mutex_init(&lock_player, NULL);
-    pthread_mutex_init(&lock_bullet, NULL);
-    sem_init(&sem_bullets, 0, 0);
+    nodelay(stdscr, FALSE); 
 
-    pthread_t player_thread, aliens_thread, shoot_thread, alien_shoot_thread;
-    pthread_create(&player_thread, NULL, move_player, NULL);
-    pthread_create(&aliens_thread, NULL, move_aliens, NULL);
-    pthread_create(&shoot_thread, NULL, player_shoot, NULL);
-    pthread_create(&alien_shoot_thread, NULL, alien_shoot, NULL);
+    while (1) {
+        handle_menu();  // Mostrar menú
 
-    while (!game_over) {
-        update_bullets();
-        draw_game();
-        if (check_game_over()) break;
-        usleep(DELAY);
+        // Inicializar el juego
+        nodelay(stdscr, TRUE);
+        init_aliens();
+        init_bullets();
+        pthread_mutex_init(&lock, NULL);
+        pthread_mutex_init(&lock_player, NULL);
+        pthread_mutex_init(&lock_bullet, NULL);
+        sem_init(&sem_bullets, 0, 0);
+
+        //Se declaran las variables con numeros concretos
+        player_x = MAX_X / 2;
+        player_y = MAX_Y - 2;
+        score = 0;
+        lives = 3;
+        invader_speed = ALIEN_DELAY;
+        alien_start_col = 0;
+        alien_direction = 1;
+        alien_row_offset = 0;
+        game_over = false;
+        paused = false;
+
+        //Se inicializan las threads de los alienigenas, disparos de ambos, y el jugador
+        pthread_t player_thread, aliens_thread, shoot_thread, alien_shoot_thread;
+        pthread_create(&player_thread, NULL, move_player, NULL);
+        pthread_create(&aliens_thread, NULL, move_aliens, NULL);
+        pthread_create(&shoot_thread, NULL, player_shoot, NULL);
+        pthread_create(&alien_shoot_thread, NULL, alien_shoot, NULL);
+
+        //Se chequea durante el juego que las conficiones de ganar no hayn sucedido
+        while (!game_over) {
+            int ch = getch();
+            if (ch == 'p' || ch == 'P') {
+                paused = !paused;
+                if (paused) {
+                    mvprintw(MAX_Y/2, MAX_X/2 - 5, "PAUSED");
+                    refresh();
+                }
+            }
+            if (!paused) {
+                update_bullets();
+                draw_game();
+                if (check_game_over()) break;
+            }
+            usleep(DELAY);
+        }
+
+        // Muestra mensaje de fin del juego
+        clear();
+        mvprintw(MAX_Y/2, MAX_X/2 - 5, "GAME OVER");
+        mvprintw(MAX_Y/2 + 1, MAX_X/2 - 7, "Final Score: %d", score);
+        mvprintw(MAX_Y/2 + 2, MAX_X/2 - 12, "Press any key to continue");
+        refresh();
+        nodelay(stdscr, FALSE);
+        getch();
+
+        // Limpiar recursos
+        pthread_mutex_destroy(&lock);
+        pthread_mutex_destroy(&lock_player);
+        pthread_mutex_destroy(&lock_bullet);
+        sem_destroy(&sem_bullets);
+
+        // Volver al menú
+        in_menu = true;
     }
 
-    // Muestra mensaje de fin del juego
-    clear();
-    mvprintw(MAX_Y/2, MAX_X/2 - 5, "GAME OVER");
-    mvprintw(MAX_Y/2 + 1, MAX_X/2 - 7, "Final Score: %d", score);
-    refresh();
-    sleep(3);
-
-    // Finaliza el juego
     endwin();
-    pthread_mutex_destroy(&lock);
-    pthread_mutex_destroy(&lock_player);
-    pthread_mutex_destroy(&lock_bullet);
-    sem_destroy(&sem_bullets);
     return 0;
 }
